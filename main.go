@@ -5,8 +5,6 @@ import (
 	"log"
 	"os"
 	"time"
-
-	"github.com/mplewis/bluecat/bluetooth"
 )
 
 const scanTimeout = 60 * time.Second
