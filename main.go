@@ -9,7 +9,7 @@ import (
 	"github.com/mplewis/bluecat/bluetooth"
 )
 
-const scanTimeout = 15 * time.Second
+const scanTimeout = 60 * time.Second
 
 var adapter = bluetooth.DefaultAdapter
 
@@ -30,11 +30,10 @@ func main() {
 
 	uuids := []bluetooth.UUID{
 		parse("af30"),
+		// parse("feed"),
 	}
 
 	results := make(chan *bluetooth.ScanResult)
-	fmt.Println("starting scan")
-
 	go func() {
 		err = adapter.Scan(uuids, func(adapter *bluetooth.Adapter, device bluetooth.ScanResult) {
 			results <- &device
@@ -44,13 +43,28 @@ func main() {
 		}
 	}()
 
-	var device *bluetooth.ScanResult
+	var result *bluetooth.ScanResult
 	fmt.Println("scanning...")
 	select {
-	case device = <-results:
-		fmt.Printf("found device: %s\n", device.LocalName())
+	case result = <-results:
+		break
 	case <-time.After(scanTimeout):
 		fmt.Println("scan timed out")
 		os.Exit(1)
 	}
+	fmt.Printf("connecting to device: %s: %s\n", result.LocalName(), result.Address.String())
+
+	cp := bluetooth.ConnectionParams{}
+
+	device, err := adapter.Connect(result.Address, cp)
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Println(device)
+
+	svcs, err := device.DiscoverServices(nil)
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Println(svcs)
 }
