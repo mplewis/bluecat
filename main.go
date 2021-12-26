@@ -3,9 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"time"
 
 	"github.com/mplewis/bluecat/bluetooth"
 )
+
+const scanTimeout = 15 * time.Second
 
 var adapter = bluetooth.DefaultAdapter
 
@@ -19,8 +23,6 @@ func parse(uuid4 string) bluetooth.UUID {
 }
 
 func main() {
-	fmt.Println(checksum([]byte("deadbeef")))
-
 	err := adapter.Enable()
 	if err != nil {
 		log.Panic(err)
@@ -30,11 +32,25 @@ func main() {
 		parse("af30"),
 	}
 
-	println("scanning...")
-	err = adapter.Scan(uuids, func(adapter *bluetooth.Adapter, device bluetooth.ScanResult) {
-		println("found device:", device.Address.String(), device.RSSI, device.LocalName())
-	})
-	if err != nil {
-		log.Panic(err)
+	results := make(chan *bluetooth.ScanResult)
+	fmt.Println("starting scan")
+
+	go func() {
+		err = adapter.Scan(uuids, func(adapter *bluetooth.Adapter, device bluetooth.ScanResult) {
+			results <- &device
+		})
+		if err != nil {
+			log.Panic(err)
+		}
+	}()
+
+	var device *bluetooth.ScanResult
+	fmt.Println("scanning...")
+	select {
+	case device = <-results:
+		fmt.Printf("found device: %s\n", device.LocalName())
+	case <-time.After(scanTimeout):
+		fmt.Println("scan timed out")
+		os.Exit(1)
 	}
 }
