@@ -1,5 +1,7 @@
 from queue import Queue
+from typing import List, Optional
 
+from bleak import BleakScanner, BLEDevice
 from fastapi import FastAPI, File, UploadFile
 
 
@@ -14,6 +16,16 @@ PRINTER_NAMES = [
 
 app = FastAPI()
 print_queue = Queue()
+
+
+async def scan_for(names: List[str]) -> Optional[BLEDevice]:
+    devices = await BleakScanner.discover()
+    print(devices)
+    for name in names:
+        for device in devices:
+            if device.name == name:
+                return device
+    return None
 
 
 class Printer:
