@@ -3,22 +3,18 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"time"
+
+	"tinygo.org/x/bluetooth"
 )
 
-const scanTimeout = 60 * time.Second
+var printerNames = []string{
+	"GT01",
+	"GB01",
+	"GB02",
+	"GB03",
+}
 
 var adapter = bluetooth.DefaultAdapter
-
-func parse(uuid4 string) bluetooth.UUID {
-	uuid128 := fmt.Sprintf("0000%s-0000-1000-8000-00805f9b34fb", uuid4)
-	uuid, err := bluetooth.ParseUUID(uuid128)
-	if err != nil {
-		log.Panic(err)
-	}
-	return uuid
-}
 
 func main() {
 	err := adapter.Enable()
@@ -26,43 +22,39 @@ func main() {
 		log.Panic(err)
 	}
 
-	uuids := []bluetooth.UUID{
-		parse("af30"),
-		// parse("feed"),
-	}
-
-	results := make(chan *bluetooth.ScanResult)
+	println("scanning...")
+	ch := make(chan bluetooth.ScanResult)
 	go func() {
-		err = adapter.Scan(uuids, func(adapter *bluetooth.Adapter, device bluetooth.ScanResult) {
-			results <- &device
+		err = adapter.Scan(func(adapter *bluetooth.Adapter, device bluetooth.ScanResult) {
+			for _, name := range printerNames {
+				if device.LocalName() == name {
+					ch <- device
+					return
+				}
+			}
 		})
 		if err != nil {
 			log.Panic(err)
 		}
 	}()
 
-	var result *bluetooth.ScanResult
-	fmt.Println("scanning...")
-	select {
-	case result = <-results:
-		break
-	case <-time.After(scanTimeout):
-		fmt.Println("scan timed out")
-		os.Exit(1)
-	}
-	fmt.Printf("connecting to device: %s: %s\n", result.LocalName(), result.Address.String())
+	result := <-ch
+	fmt.Printf("found printer: %s\n", result.LocalName())
 
-	cp := bluetooth.ConnectionParams{}
-
-	device, err := adapter.Connect(result.Address, cp)
+	device, err := adapter.Connect(result.Address, bluetooth.ConnectionParams{})
 	if err != nil {
 		log.Panic(err)
 	}
-	fmt.Println(device)
 
 	svcs, err := device.DiscoverServices(nil)
 	if err != nil {
 		log.Panic(err)
 	}
+
 	fmt.Println(svcs)
+
+	err = device.Disconnect()
+	if err != nil {
+		log.Panic(err)
+	}
 }
