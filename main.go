@@ -7,54 +7,55 @@ import (
 	"tinygo.org/x/bluetooth"
 )
 
-var printerNames = []string{
-	"GT01",
-	"GB01",
-	"GB02",
-	"GB03",
-}
+const (
+	idSvcPrinter = "ae30"
+	idChrPrint   = "ae01"
+	idChrNotify  = "ae02"
+)
 
-var adapter = bluetooth.DefaultAdapter
-
-func main() {
-	err := adapter.Enable()
-	if err != nil {
-		log.Panic(err)
+var (
+	printerNames = []string{
+		"GT01",
+		"GB01",
+		"GB02",
+		"GB03",
 	}
+)
 
-	println("scanning...")
-	ch := make(chan bluetooth.ScanResult)
-	go func() {
-		err = adapter.Scan(func(adapter *bluetooth.Adapter, device bluetooth.ScanResult) {
-			for _, name := range printerNames {
-				if device.LocalName() == name {
-					ch <- device
-					return
-				}
-			}
-		})
+func mustUUID(uuids ...string) []bluetooth.UUID {
+	parsed := make([]bluetooth.UUID, len(uuids))
+	for i, uuid := range uuids {
+		u, err := bluetooth.ParseUUID(fmt.Sprintf("0000%s-0000-1000-8000-00805f9b34fb", uuid))
 		if err != nil {
 			log.Panic(err)
 		}
-	}()
-
-	result := <-ch
-	fmt.Printf("found printer: %s\n", result.LocalName())
-
-	device, err := adapter.Connect(result.Address, bluetooth.ConnectionParams{})
-	if err != nil {
-		log.Panic(err)
+		parsed[i] = u
 	}
+	return parsed
+}
 
-	svcs, err := device.DiscoverServices(nil)
-	if err != nil {
-		log.Panic(err)
-	}
+func main() {
+	withConn(printerNames, func(device *bluetooth.Device, err error) {
+		if err != nil {
+			log.Panic(err)
+		}
 
-	fmt.Println(svcs)
+		fmt.Println("Connected")
 
-	err = device.Disconnect()
-	if err != nil {
-		log.Panic(err)
-	}
+		svcs, err := device.DiscoverServices(mustUUID(idSvcPrinter))
+		if err != nil {
+			log.Panic(err)
+		}
+		svc := svcs[0]
+		fmt.Println(svc)
+
+		chrs, err := svc.DiscoverCharacteristics(mustUUID(idChrPrint, idChrNotify))
+		if err != nil {
+			log.Panic(err)
+		}
+		chrPrint := chrs[0]
+		chrNotify := chrs[1]
+		fmt.Println(chrPrint)
+		fmt.Println(chrNotify)
+	})
 }
