@@ -20,7 +20,6 @@ func withConn(names []string, cb func(*bluetooth.Device, error)) {
 			for _, name := range names {
 				if device.LocalName() == name {
 					ch <- device
-					close(ch)
 					return
 				}
 			}

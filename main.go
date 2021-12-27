@@ -20,15 +20,22 @@ var (
 		"GB02",
 		"GB03",
 	}
+	feed10Lines = []byte{
+		0x51, 0x78, 0xbd, 0x00, 0x01, 0x00, 0x19, 0x4f, 0xff, 0x51, 0x78, 0xa1, 0x00, 0x02, 0x00, 0x64, 0x00, 0xa1, 0xff,
+	}
 )
+
+func check(err error) {
+	if err != nil {
+		log.Panic(err)
+	}
+}
 
 func mustUUID(uuids ...string) []bluetooth.UUID {
 	parsed := make([]bluetooth.UUID, len(uuids))
 	for i, uuid := range uuids {
 		u, err := bluetooth.ParseUUID(fmt.Sprintf("0000%s-0000-1000-8000-00805f9b34fb", uuid))
-		if err != nil {
-			log.Panic(err)
-		}
+		check(err)
 		parsed[i] = u
 	}
 	return parsed
@@ -36,26 +43,20 @@ func mustUUID(uuids ...string) []bluetooth.UUID {
 
 func main() {
 	withConn(printerNames, func(device *bluetooth.Device, err error) {
-		if err != nil {
-			log.Panic(err)
-		}
+		check(err)
 
 		fmt.Println("Connected")
 
 		svcs, err := device.DiscoverServices(mustUUID(idSvcPrinter))
-		if err != nil {
-			log.Panic(err)
-		}
+		check(err)
 		svc := svcs[0]
-		fmt.Println(svc)
-
 		chrs, err := svc.DiscoverCharacteristics(mustUUID(idChrPrint, idChrNotify))
-		if err != nil {
-			log.Panic(err)
-		}
+		check(err)
 		chrPrint := chrs[0]
-		chrNotify := chrs[1]
-		fmt.Println(chrPrint)
-		fmt.Println(chrNotify)
+		// chrNotify := chrs[1] // TODO: Not supported?
+
+		n, err := chrPrint.WriteWithoutResponse(feed10Lines)
+		check(err)
+		fmt.Printf("Wrote %d bytes\n", n)
 	})
 }
