@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"time"
 
 	"tinygo.org/x/bluetooth"
 )
@@ -79,6 +80,7 @@ func main() {
 		check(err)
 
 		fmt.Println("Connected")
+		time.Sleep(100 * time.Millisecond)
 
 		svcs, err := device.DiscoverServices(mustUUID(idSvcPrinter))
 		check(err)
@@ -87,18 +89,29 @@ func main() {
 		check(err)
 		chrPrint := chrs[0]
 		// chrNotify := chrs[1] // TODO: Not supported?
+		fmt.Println(chrPrint)
 
-		n, err := chrPrint.WriteWithoutResponse(feed(100))
-		check(err)
-		fmt.Printf("Wrote %d bytes\n", n)
-		n, err = chrPrint.WriteWithoutResponse(feed(100))
-		check(err)
-		fmt.Printf("Wrote %d bytes\n", n)
-		n, err = chrPrint.WriteWithoutResponse(feed(100))
-		check(err)
-		fmt.Printf("Wrote %d bytes\n", n)
-		n, err = chrPrint.WriteWithoutResponse(feed(100))
-		check(err)
-		fmt.Printf("Wrote %d bytes\n", n)
+		send := func(cmd Cmd) {
+			for att := 0; att < 10; att++ {
+				n, err := chrPrint.WriteWithoutResponse(cmd)
+				if err == nil {
+					fmt.Printf("Wrote %d bytes\n", n)
+					break
+				}
+				fmt.Println(err)
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+
+		send(feed(1))
+		time.Sleep(200 * time.Millisecond)
+		send(feed(1))
+		time.Sleep(200 * time.Millisecond)
+		send(feed(1))
+		time.Sleep(200 * time.Millisecond)
+		send(feed(1))
+		time.Sleep(200 * time.Millisecond)
+		send(feed(1))
+		time.Sleep(200 * time.Millisecond)
 	})
 }

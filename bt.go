@@ -33,7 +33,11 @@ func withConn(names []string, cb func(*bluetooth.Device, error)) {
 	result := <-ch
 
 	device, err := adapter.Connect(result.Address, bluetooth.ConnectionParams{})
+	connected := err == nil
 	defer func() {
+		if !connected {
+			return
+		}
 		err = device.Disconnect()
 		if err != nil {
 			fmt.Println(err)
