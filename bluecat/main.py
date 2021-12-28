@@ -3,7 +3,7 @@ from queue import Queue
 from time import time
 from typing import List, Optional
 
-from bleak import BleakScanner
+from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 from fastapi import FastAPI, File, UploadFile
@@ -48,17 +48,30 @@ async def scan_for(names: List[str]) -> Optional[BLEDevice]:
 class Printer:
     def __init__(self):
         self.device = None
+        self.client = None
 
-    def connect(self):
+    def on_disconnect(self, _client):
+        print('Disconnected')
+        self.device = None
+        self.client = None
+
+    def on_notify(self, sender, data):
+        print(f'Notify: {sender}: {data}')
+
+    async def connect(self):
         if self.device:
             raise DeviceStateError('Device is already connected')
-        self.device = scan_for(PRINTER_NAMES)
+        self.device = await scan_for(PRINTER_NAMES)
+        if not self.device:
+            raise DeviceStateError('Device not found')
+        self.client = BleakClient(self.device, disconnected_callback=self.on_disconnect)
+        await self.client.connect()
+        await self.client.start_notify('0000ae02-0000-1000-8000-00805f9b34fb', self.on_notify)
 
-    def disconnect(self):
+    async def disconnect(self):
         if not self.device:
             raise DeviceStateError('Device is not connected')
-        self.device.disconnect()
-        self.device = None
+        await self.client.disconnect()
 
     def send(self, cmds):
         if not self.device:
@@ -95,8 +108,22 @@ class DeviceStateError(Exception):
 
 
 async def main():
-    printer = await scan_for(PRINTER_NAMES)
-    print(printer)
+    # printer = await scan_for(PRINTER_NAMES)
+    # print(printer)
+    # client = BleakClient(printer)
+    # try:
+    #     await client.connect()
+    #     svcs = await client.get_services()
+    #     for service in svcs:
+    #         print(service)
+    # finally:
+    #     await client.disconnect()
+    p = Printer()
+    try:
+        await p.connect()
+        print('OK')
+    finally:
+        await p.disconnect()
 
 if __name__ == '__main__':
     asyncio.run(main())
