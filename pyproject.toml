@@ -9,6 +9,7 @@ python = "^3.10"
 fastapi = "^0.70.1"
 python-multipart = "^0.0.5"
 uvicorn = "^0.16.0"
+bleak = "^0.13.0"
 
 [tool.poetry.dev-dependencies]
 ipython = "^7.30.1"

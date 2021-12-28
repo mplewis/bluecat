@@ -1,7 +1,11 @@
+import asyncio
 from queue import Queue
+from time import time
 from typing import List, Optional
 
-from bleak import BleakScanner, BLEDevice
+from bleak import BleakScanner
+from bleak.backends.device import BLEDevice
+from bleak.backends.scanner import AdvertisementData
 from fastapi import FastAPI, File, UploadFile
 
 
@@ -19,13 +23,26 @@ print_queue = Queue()
 
 
 async def scan_for(names: List[str]) -> Optional[BLEDevice]:
-    devices = await BleakScanner.discover()
-    print(devices)
-    for name in names:
-        for device in devices:
-            if device.name == name:
-                return device
-    return None
+    device: BLEDevice = None
+
+    def detection_callback(cand: BLEDevice, _: AdvertisementData):
+        nonlocal device
+        if device:
+            return
+        if cand.name in names:
+            device = cand
+
+    scanner = BleakScanner()
+    scanner.register_detection_callback(detection_callback)
+    start = time()
+    await scanner.start()
+    while time() - start < 5.0:
+        if device:
+            break
+        await asyncio.sleep(0.1)
+    await scanner.stop()
+    return device
+
 
 
 class Printer:
@@ -69,9 +86,17 @@ def wait_for_jobs():
 
 
 @app.post("/print")
-async def print(image: UploadFile = File(...)):
+async def print_ep(image: UploadFile = File(...)):
     return {"filename": image.filename}
 
 
 class DeviceStateError(Exception):
     pass
+
+
+async def main():
+    printer = await scan_for(PRINTER_NAMES)
+    print(printer)
+
+if __name__ == '__main__':
+    asyncio.run(main())
