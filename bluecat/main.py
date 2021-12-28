@@ -1,6 +1,4 @@
 import asyncio
-from enum import Enum
-from io import BytesIO
 from queue import Queue
 from time import time
 from typing import List, Optional
@@ -20,6 +18,18 @@ CHR_PRINT = "0000ae01-0000-1000-8000-00805f9b34fb"
 CHR_NOTIFY = "0000ae02-0000-1000-8000-00805f9b34fb"
 
 CMD_FEED_PAPER = 0xA1
+CMD_PRINT_BITS = 0xA2
+CMD_PRINT_RLE = 0xBF
+CMD_SET_LATTICE = 0xA6
+CMD_SET_DRAW_MODE = 0xBE
+CMD_SET_QUALITY = 0xA4
+CMD_SET_ENERGY = 0xAF
+
+DATA_LATTICE_START = [0xAA, 0x55, 0x17, 0x38, 0x44, 0x5F, 0x5F, 0x5F, 0x44, 0x38, 0x2C]
+DATA_LATTICE_END = [0xAA, 0x55, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17]
+
+BLACK = 1
+WHITE = 0
 
 DELAY_CMDS = 0.01  # seconds
 IDLE_TIMEOUT = 15  # seconds
@@ -77,6 +87,15 @@ def build_cmd(cmd: int, data: List[int]) -> Cmd:
     ]
 
 
+def run_byte(color: int, count: int) -> Cmd:
+    if count > 0x7F:
+        raise ValueError("count must be <= 0x7f")
+    msb = 0x00
+    if color == BLACK:
+        msb = 0x80
+    return count | msb
+
+
 class Printer:
     def __init__(self):
         self.device = None
@@ -111,7 +130,6 @@ class Printer:
         if not self.device:
             raise DeviceStateError("Device is not connected")
         for cmd in cmds:
-            print(cmd)
             await self.client.write_gatt_char(CHR_PRINT, cmd)
             await asyncio.sleep(DELAY_CMDS)
 
@@ -149,21 +167,40 @@ class DeviceStateError(Exception):
 
 
 async def main():
-    # printer = await scan_for(PRINTER_NAMES)
-    # print(printer)
-    # client = BleakClient(printer)
-    # try:
-    #     await client.connect()
-    #     svcs = await client.get_services()
-    #     for service in svcs:
-    #         print(service)
-    # finally:
-    #     await client.disconnect()
+    cmds = []
+    cmds.append(build_cmd(CMD_SET_DRAW_MODE, [0x00]))
+    cmds.append(build_cmd(CMD_SET_ENERGY, [0x2E]))
+    cmds.append(build_cmd(CMD_SET_QUALITY, [0x33]))
+    cmds.append(build_cmd(CMD_SET_LATTICE, DATA_LATTICE_START))
+
+    cols = 10
+    rows = 4
+    sqSize = 50
+    checkersRowA = []
+    checkersRowB = []
+    for xsq in range(cols):
+        for _ in range(sqSize):
+            aColor = xsq % 2
+            bColor = 1 - aColor
+            checkersRowA.append(run_byte(aColor, sqSize))
+            checkersRowB.append(run_byte(bColor, sqSize))
+
+    for y in range(rows * sqSize):
+        row = checkersRowA
+        if int(y / sqSize) % 2 == 0:
+            row = checkersRowB
+        cmds.append(build_cmd(CMD_PRINT_RLE, row))
+
+    cmds.append(build_cmd(CMD_SET_LATTICE, DATA_LATTICE_END))
+
+    for cmd in cmds:
+        print(" ".join(f"0x{x:02x}" for x in cmd))
+
     p = Printer()
     try:
         await p.connect()
         print("OK")
-        await p.feed(1000)
+        await p.send(cmds)
     finally:
         await p.disconnect()
 
