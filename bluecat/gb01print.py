@@ -5,6 +5,7 @@ from time import time
 from typing import Union, Iterable
 
 from bleak import BleakClient, BleakScanner
+from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 from crc8 import crc8
 
@@ -143,18 +144,18 @@ def cmd_feed_paper(lines):
 @dataclass
 class Args:
     filename: str
+    padding: int = 0
 
 
-def main(args: Args):
-    feed_lines = 112
-    device = None
+async def main(args: Args):
+    _device = None
 
-    def detect_printer(detected, _advertisement_data):
-        nonlocal device
+    def detect_printer(detected, _):
+        nonlocal _device
         if detected.name in PRINTER_NAMES:
-            device = detected
+            _device = detected
 
-    async def connect_and_send(data):
+    async def connect() -> BLEDevice:
         scanner = BleakScanner()
         scanner.register_detection_callback(detect_printer)
 
@@ -162,30 +163,34 @@ def main(args: Args):
         start = time()
         while time() - start < DISCOVERY_TIMEOUT:
             await asyncio.sleep(0.1)
-            if device:
+            if _device:
                 break
         await scanner.stop()
-        if not device:
-            raise BleakError("device not found")
 
+        if not _device:
+            raise BleakError("device not found")
+        return _device
+
+    async def send(device: BLEDevice, cmds):
         async with BleakClient(device) as client:
-            while data:
+            while cmds:
                 # Cut the command stream up into pieces small enough for the printer to handle
-                await client.write_gatt_char(CHR_PRINT, bytearray(data[:CMD_MAX_LEN]))
-                data = data[CMD_MAX_LEN:]
+                await client.write_gatt_char(CHR_PRINT, bytearray(cmds[:CMD_MAX_LEN]))
+                cmds = cmds[CMD_MAX_LEN:]
                 await asyncio.sleep(CMD_DELAY)
 
     image = PIL.Image.open(args.filename)
-
-    print_data = []
-    print_data = print_data + cmd_print_image(image)
-    print_data = print_data + cmd_feed_paper(feed_lines)
-
-    asyncio.run(connect_and_send(print_data))
+    cmds = [
+        *cmd_print_image(image),
+        *cmd_feed_paper(args.padding),
+    ]
+    printer = await connect()
+    await send(printer, cmds)
 
 
 if __name__ == "__main__":
     args = Args(
         filename="tmp/redrocks.pbm",
+        padding=60,
     )
-    main(args)
+    asyncio.run(main(args))
