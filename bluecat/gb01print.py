@@ -17,7 +17,7 @@ PRINTER_WIDTH = 384  # pixels
 CHR_PRINT = "0000AE01-0000-1000-8000-00805F9B34FB"
 CMD_DELAY = 0.01  # seconds between characteristic WriteWithoutResponse calls
 CMD_MAX_LEN = 60  # bytes per characteristic WriteWithoutResponse call
-PRINTER_NAMES = [
+PRINTER_NAMES = [  # Cat printers have one of these names as their BLE-advertised name.
     "GT01",
     "GB01",
     "GB02",
@@ -25,11 +25,14 @@ PRINTER_NAMES = [
 ]
 
 
-def printer_short(i):
+def uint16_le(i: int) -> bytes:
+    """Convert a number to little-endian uint16 bytes."""
     return [i & 0xFF, (i >> 8) & 0xFF]
 
 
 class Command:
+    """Commands for controlling the printer."""
+
     FeedPaper = 0xA1  # steps to advance paper
     DrawBitmap = 0xA2  # 1 bit = black dot
     SetFeedRate = 0xBD
@@ -40,22 +43,33 @@ class Command:
 
 
 class FeedRate:
+    """Fixed feed rates for printer functions."""
+
     Print = 0x23
     Blank = 0x19
 
 
 class DrawingMode:
+    """The drawing mode for the printer's graphics."""
+
     Image = 0x00
     Text = 0x01
 
 
 class EnergyMode:
-    Low = printer_short(8000)
-    Medium = printer_short(12000)
-    High = printer_short(17500)
+    """The energy mode for the printer, from 0x0000 to 0xFFFF.
+
+    Higher energy modes use more power and produce darker pixels.
+    """
+
+    Low = 8000
+    Medium = 12000
+    High = 17500
 
 
 class PrintQuality:
+    """The print quality. Higher quality produces better images."""
+
     A = 0x31
     B = 0x32
     C = 0x33  # Android app default
@@ -64,11 +78,25 @@ class PrintQuality:
 
 
 class Lattice:
+    """The lattice is used to control some mode of the printer. I don't understand how this works."""
+
     Start = [0xAA, 0x55, 0x17, 0x38, 0x44, 0x5F, 0x5F, 0x5F, 0x44, 0x38, 0x2C]
     Finish = [0xAA, 0x55, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17]
 
 
-def format_message(command, data: Union[int, Iterable[int]]) -> bytes:
+@dataclass
+class Args:
+    """The arguments for a print job."""
+
+    filename: str
+    padding: int = 0
+    drawing_mode: int = DrawingMode.Image
+    energy_mode: int = EnergyMode.Medium
+    print_quality: int = PrintQuality.C
+
+
+def format_message(command: int, data: Union[int, Iterable[int]]) -> bytes:
+    """Build a message for the printer."""
     if not isinstance(data, Iterable):
         data = [data]
     c = crc8()
@@ -86,13 +114,19 @@ def format_message(command, data: Union[int, Iterable[int]]) -> bytes:
     )
 
 
-def cmd_print_image(img: PIL.Image) -> Iterable[int]:
+def cmd_print_image(
+    img: PIL.Image,
+    drawing_mode: int,
+    energy_mode: int,
+    print_quality: int,
+) -> Iterable[int]:
+    """Build a command that prints an image."""
     cmds = []
-    cmds += format_message(Command.SetQuality, PrintQuality.C)
-    cmds += format_message(Command.SetControlLattice, Lattice.Start)
-    cmds += format_message(Command.SetEnergy, EnergyMode.High)
-    cmds += format_message(Command.SetDrawingMode, DrawingMode.Image)
+    cmds += format_message(Command.SetDrawingMode, drawing_mode)
+    cmds += format_message(Command.SetEnergy, uint16_le(energy_mode))
+    cmds += format_message(Command.SetQuality, print_quality)
     cmds += format_message(Command.SetFeedRate, FeedRate.Print)
+    cmds += format_message(Command.SetControlLattice, Lattice.Start)
 
     if img.width > PRINTER_WIDTH:
         # image is wider than printer resolution; scale it down proportionately
@@ -133,21 +167,17 @@ def cmd_print_image(img: PIL.Image) -> Iterable[int]:
 
 
 def cmd_feed_paper(lines):
+    """Build a command that feeds paper."""
     blank_commands = format_message(Command.SetFeedRate, FeedRate.Blank)
     while lines:
         feed = min(lines, 0xFF)
-        blank_commands += format_message(Command.FeedPaper, printer_short(feed))
+        blank_commands += format_message(Command.FeedPaper, uint16_le(feed))
         lines = lines - feed
     return blank_commands
 
 
-@dataclass
-class Args:
-    filename: str
-    padding: int = 0
-
-
 async def main(args: Args):
+    """Connect to a printer and print an image."""
     _device = None
 
     def detect_printer(detected, _):
@@ -181,7 +211,12 @@ async def main(args: Args):
 
     image = PIL.Image.open(args.filename)
     cmds = [
-        *cmd_print_image(image),
+        *cmd_print_image(
+            image,
+            args.drawing_mode,
+            args.energy_mode,
+            args.print_quality,
+        ),
         *cmd_feed_paper(args.padding),
     ]
     printer = await connect()
