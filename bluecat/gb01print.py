@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 from dataclasses import dataclass
+from time import time
 from typing import Union, Iterable
 
 from bleak import BleakClient, BleakScanner
@@ -10,7 +11,17 @@ from crc8 import crc8
 import PIL.Image
 
 
+DISCOVERY_TIMEOUT = 15  # seconds to scan for a printer
 PRINTER_WIDTH = 384  # pixels
+CHR_PRINT = "0000AE01-0000-1000-8000-00805F9B34FB"
+CMD_DELAY = 0.01  # seconds between characteristic WriteWithoutResponse calls
+CMD_MAX_LEN = 60  # bytes per characteristic WriteWithoutResponse call
+PRINTER_NAMES = [
+    "GT01",
+    "GB01",
+    "GB02",
+    "GB03",
+]
 
 
 @dataclass
@@ -72,40 +83,34 @@ def main(args: Args):
     FinishLattice = [0xAA, 0x55, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17]
 
     feed_lines = 112
-    scale_feed = False
 
-    packet_length = 60
-    throttle = 0.01
-
-    PrinterCharacteristic = "0000AE01-0000-1000-8000-00805F9B34FB"
     device = None
 
     def detect_printer(detected, _advertisement_data):
         nonlocal device
-        if detected.name == "GB03":
+        if detected.name in PRINTER_NAMES:
             device = detected
 
     async def connect_and_send(data):
         scanner = BleakScanner()
         scanner.register_detection_callback(detect_printer)
+
         await scanner.start()
-        for x in range(50):
+        start = time()
+        while time() - start < DISCOVERY_TIMEOUT:
             await asyncio.sleep(0.1)
             if device:
                 break
         await scanner.stop()
-
         if not device:
-            raise BleakError("The printer was not found.")
+            raise BleakError("device not found")
+
         async with BleakClient(device) as client:
             while data:
                 # Cut the command stream up into pieces small enough for the printer to handle
-                await client.write_gatt_char(
-                    PrinterCharacteristic, bytearray(data[:packet_length])
-                )
-                data = data[packet_length:]
-                if throttle is not None:
-                    await asyncio.sleep(throttle)
+                await client.write_gatt_char(CHR_PRINT, bytearray(data[:CMD_MAX_LEN]))
+                data = data[CMD_MAX_LEN:]
+                await asyncio.sleep(CMD_DELAY)
 
     def blank_paper(lines):
         blank_commands = format_message(Command.SetFeedRate, FeedRate.Blank)
@@ -128,22 +133,15 @@ def main(args: Args):
         if img.width > PRINTER_WIDTH:
             # image is wider than printer resolution; scale it down proportionately
             scale = PRINTER_WIDTH / img.width
-            if scale_feed:
-                feed_lines = int(feed_lines * scale)
             img = img.resize((PRINTER_WIDTH, int(img.height * scale)))
         if img.width < (PRINTER_WIDTH // 2):
             # scale up to largest whole multiple
             scale = PRINTER_WIDTH // img.width
-            if scale_feed:
-                feed_lines = int(feed_lines * scale)
             img = img.resize(
                 (img.width * scale, img.height * scale), resample=PIL.Image.NEAREST
             )
-        # convert image to B&W 1bpp
-        img = img.convert("RGB")
-        img = img.convert("1")
+        img = img.convert("RGB").convert("1")
         if img.width < PRINTER_WIDTH:
-            # image is narrower than printer resolution, pad with white pixels
             pad_amount = (PRINTER_WIDTH - img.width) // 2
             padded_image = PIL.Image.new("1", (PRINTER_WIDTH, img.height), 1)
             padded_image.paste(img, box=(pad_amount, 0))
