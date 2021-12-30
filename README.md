@@ -1,6 +1,8 @@
 # Bluecat
 
-A Python-based server for printing to a cute cat printer.
+A Python-based web server for printing to a cute cat printer.
+
+I plan to turn this into a full-featured web-based photo booth application.
 
 # Usage
 
