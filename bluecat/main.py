@@ -46,16 +46,23 @@ async def print_ep(image: UploadFile = File(...)):
 
 
 async def main():
-    args = PrintAndFeedArgs(
-        filename="tmp/daftpunk.jpg",
-        padding=60,
-        energy_mode=EnergyMode.High,
-    )
-    cmds = cmd_print_and_feed(args)
+    filenames = [
+        "tmp/redrocks.pbm",
+        # "tmp/daftpunk.jpg",
+        # "tmp/redrocks.pbm",
+    ]
+    cmds = []
+    for fn in filenames:
+        args = PrintAndFeedArgs(
+            filename=fn,
+            padding=40,
+            energy_mode=EnergyMode.High,
+        )
+        cmds.extend(cmd_print_and_feed(args))
+
     p = Printer()
     try:
         await p.connect()
-        print("OK")
         await p.send(cmds)
     finally:
         await p.disconnect()

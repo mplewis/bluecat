@@ -1,5 +1,6 @@
 import asyncio
 from queue import Queue
+from threading import Thread
 from time import time
 from typing import List, Optional
 
@@ -7,8 +8,10 @@ from bleak import BleakClient, BleakScanner, BleakError
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
+from bluecat.protocol import cmd_print_and_feed, PrintAndFeedArgs
 
 DISCOVERY_TIMEOUT = 15  # seconds to scan for a printer
+IDLE_TIMEOUT = 15  # seconds to wait for a print job before disconnecting
 CHR_PRINT = "0000AE01-0000-1000-8000-00805F9B34FB"
 CHR_NOTIFY = "0000AE02-0000-1000-8000-00805F9B34FB"
 BYTES_PER_SEND = 60  # max number of bytes to send in each WriteWithoutResponse
@@ -48,6 +51,16 @@ class Printer:
     def __init__(self):
         self.device: BLEDevice = None
         self.client: BleakClient = None
+        self.queue = Queue()
+        self.worker = asyncio.create_task(self._wait_for_jobs())
+
+    async def __del__(self):
+        if self.connected:
+            await self.disconnect()
+
+    @property
+    def connected(self) -> bool:
+        return bool(self.client)
 
     def on_disconnect(self, _client):
         print("Disconnected")
@@ -94,15 +107,17 @@ class Printer:
             await self.client.write_gatt_char(CHR_PRINT, cmds[pos:end])
             pos += BYTES_PER_SEND
 
-
-def wait_for_jobs():
-    while True:
-        job = print_queue.get(timeout=IDLE_TIMEOUT)
-        if job:
-            send_to_printer(job)
-        else:
-            if connected:
-                disconnect()
+    async def _wait_for_jobs(self):
+        while True:
+            args: PrintAndFeedArgs = self.queue.get(timeout=IDLE_TIMEOUT)
+            if args:
+                if not self.connected:
+                    await self.connect()
+                cmds = cmd_print_and_feed(args)
+                await self.send(cmds)
+            else:
+                if self.connected:
+                    await self.disconnect()
 
 
 class PrinterError(Exception):
