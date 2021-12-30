@@ -68,7 +68,10 @@ class EnergyMode:
 
 
 class PrintQuality:
-    """The print quality. Higher quality produces better images."""
+    """The print quality.
+
+    The Android app always uses 0x33. I'm unclear how this parameter affects the image.
+    """
 
     A = 0x31
     B = 0x32
@@ -78,14 +81,17 @@ class PrintQuality:
 
 
 class Lattice:
-    """The lattice is used to control some mode of the printer. I don't understand how this works."""
+    """The lattice is used to control some mode of the printer.
+
+    I don't understand how this works.
+    """
 
     Start = [0xAA, 0x55, 0x17, 0x38, 0x44, 0x5F, 0x5F, 0x5F, 0x44, 0x38, 0x2C]
     Finish = [0xAA, 0x55, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17]
 
 
 @dataclass
-class Args:
+class PrintAndFeedArgs:
     """The arguments for a print job."""
 
     filename: str
@@ -119,7 +125,7 @@ def cmd_print_image(
     drawing_mode: int,
     energy_mode: int,
     print_quality: int,
-) -> Iterable[int]:
+) -> bytes:
     """Build a command that prints an image."""
     cmds = []
     cmds += format_message(Command.SetDrawingMode, drawing_mode)
@@ -166,7 +172,7 @@ def cmd_print_image(
     return cmds
 
 
-def cmd_feed_paper(lines):
+def cmd_feed_paper(lines) -> bytes:
     """Build a command that feeds paper."""
     blank_commands = format_message(Command.SetFeedRate, FeedRate.Blank)
     while lines:
@@ -176,41 +182,10 @@ def cmd_feed_paper(lines):
     return blank_commands
 
 
-async def main(args: Args):
-    """Connect to a printer and print an image."""
-    _device = None
-
-    def detect_printer(detected, _):
-        nonlocal _device
-        if detected.name in PRINTER_NAMES:
-            _device = detected
-
-    async def connect() -> BLEDevice:
-        scanner = BleakScanner()
-        scanner.register_detection_callback(detect_printer)
-
-        await scanner.start()
-        start = time()
-        while time() - start < DISCOVERY_TIMEOUT:
-            await asyncio.sleep(0.1)
-            if _device:
-                break
-        await scanner.stop()
-
-        if not _device:
-            raise BleakError("device not found")
-        return _device
-
-    async def send(device: BLEDevice, cmds):
-        async with BleakClient(device) as client:
-            while cmds:
-                # Cut the command stream up into pieces small enough for the printer to handle
-                await client.write_gatt_char(CHR_PRINT, bytearray(cmds[:CMD_MAX_LEN]))
-                cmds = cmds[CMD_MAX_LEN:]
-                await asyncio.sleep(CMD_DELAY)
-
+def cmd_print_and_feed(args: PrintAndFeedArgs) -> bytes:
+    """Build a command that prints an image, then feeds paper."""
     image = PIL.Image.open(args.filename)
-    cmds = [
+    return [
         *cmd_print_image(
             image,
             args.drawing_mode,
@@ -219,13 +194,3 @@ async def main(args: Args):
         ),
         *cmd_feed_paper(args.padding),
     ]
-    printer = await connect()
-    await send(printer, cmds)
-
-
-if __name__ == "__main__":
-    args = Args(
-        filename="tmp/redrocks.pbm",
-        padding=60,
-    )
-    asyncio.run(main(args))
