@@ -1,10 +1,15 @@
 import asyncio
+from time import time
 from typing import List
 
 from fastapi import FastAPI, File, UploadFile
 
-from bluecat.printer import Printer
-from bluecat.protocol import cmd_print_and_feed, PrintAndFeedArgs, EnergyMode
+from bluecat.printer import connected_client, send_packets
+from bluecat.protocol import (
+    cmd_print_and_feed,
+    PrintAndFeedArgs,
+    EnergyMode,
+)
 
 Cmd = bytes
 Cmds = List[Cmd]
@@ -27,8 +32,7 @@ DATA_LATTICE_END = [0xAA, 0x55, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 BLACK = 1
 WHITE = 0
 
-DELAY_CMDS = 0.01  # seconds
-IDLE_TIMEOUT = 15  # seconds
+SECS_PER_LINE = 0.0372  # seconds taken per line of image printed
 PRINTER_NAMES = [
     "GT01",
     "GB01",
@@ -45,27 +49,29 @@ async def print_ep(image: UploadFile = File(...)):
     return {"filename": image.filename}
 
 
+async def print_image(args: PrintAndFeedArgs):
+    c = cmd_print_and_feed(args)
+    async with connected_client(PRINTER_NAMES) as client:
+        start = time()
+        await send_packets(client, c.data)
+    while time() - start < c.print_time:
+        await asyncio.sleep(0.1)
+
+
 async def main():
     filenames = [
         "tmp/redrocks.pbm",
-        # "tmp/daftpunk.jpg",
-        # "tmp/redrocks.pbm",
+        "tmp/daftpunk.jpg",
+        "tmp/redrocks.pbm",
+        "tmp/daftpunk.jpg",
     ]
-    cmds = []
     for fn in filenames:
         args = PrintAndFeedArgs(
             filename=fn,
             padding=40,
             energy_mode=EnergyMode.High,
         )
-        cmds.extend(cmd_print_and_feed(args))
-
-    p = Printer()
-    try:
-        await p.connect()
-        await p.send(cmds)
-    finally:
-        await p.disconnect()
+        await print_image(args)
 
 
 if __name__ == "__main__":

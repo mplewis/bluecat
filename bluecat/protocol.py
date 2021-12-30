@@ -1,12 +1,6 @@
-#!/usr/bin/env python3
-import asyncio
 from dataclasses import dataclass
-from time import time
 from typing import Union, Iterable
 
-from bleak import BleakClient, BleakScanner
-from bleak.backends.device import BLEDevice
-from bleak.exc import BleakError
 from crc8 import crc8
 
 import PIL.Image
@@ -14,20 +8,15 @@ import PIL.Image
 
 DISCOVERY_TIMEOUT = 15  # seconds to scan for a printer
 PRINTER_WIDTH = 384  # pixels
+SECS_PER_LINE_PRINT = 0.0372  # seconds taken per line of image printed
+SECS_PER_LINE_FEED = 0.0100  # seconds taken per line of blank paper feed
 CHR_PRINT = "0000AE01-0000-1000-8000-00805F9B34FB"
-CMD_DELAY = 0.01  # seconds between characteristic WriteWithoutResponse calls
-CMD_MAX_LEN = 60  # bytes per characteristic WriteWithoutResponse call
 PRINTER_NAMES = [  # Cat printers have one of these names as their BLE-advertised name.
     "GT01",
     "GB01",
     "GB02",
     "GB03",
 ]
-
-
-def uint16_le(i: int) -> bytes:
-    """Convert a number to little-endian uint16 bytes."""
-    return [i & 0xFF, (i >> 8) & 0xFF]
 
 
 class Command:
@@ -101,6 +90,22 @@ class PrintAndFeedArgs:
     print_quality: int = PrintQuality.C
 
 
+@dataclass
+class CommandBytes:
+    """The data for a command and the time it will take to print."""
+
+    data: bytes
+    print_time: float
+
+    def __add__(self, other):
+        return CommandBytes(self.data + other.data, self.print_time + other.print_time)
+
+
+def uint16_le(i: int) -> bytes:
+    """Convert a number to little-endian uint16 bytes."""
+    return [i & 0xFF, (i >> 8) & 0xFF]
+
+
 def format_message(command: int, data: Union[int, Iterable[int]]) -> bytes:
     """Build a message for the printer."""
     if not isinstance(data, Iterable):
@@ -125,8 +130,11 @@ def cmd_print_image(
     drawing_mode: int,
     energy_mode: int,
     print_quality: int,
-) -> bytes:
-    """Build a command that prints an image."""
+) -> CommandBytes:
+    """Build a command that prints an image.
+
+    Returns the command bytes and the approximate number of seconds this will take to print.
+    """
     cmds = []
     cmds += format_message(Command.SetDrawingMode, drawing_mode)
     cmds += format_message(Command.SetEnergy, uint16_le(energy_mode))
@@ -169,28 +177,32 @@ def cmd_print_image(
         cmds += format_message(Command.DrawBitmap, bmp)
 
     cmds += format_message(Command.SetControlLattice, Lattice.Finish)
-    return cmds
+    duration = SECS_PER_LINE_PRINT * img.height
+    return CommandBytes(bytes(cmds), duration)
 
 
-def cmd_feed_paper(lines) -> bytes:
-    """Build a command that feeds paper."""
-    blank_commands = format_message(Command.SetFeedRate, FeedRate.Blank)
+def cmd_feed_paper(lines) -> CommandBytes:
+    """Build a command that feeds paper.
+
+    Returns the command bytes and the approximate number of seconds this will take to print.
+    """
+    cmds = format_message(Command.SetFeedRate, FeedRate.Blank)
     while lines:
         feed = min(lines, 0xFF)
-        blank_commands += format_message(Command.FeedPaper, uint16_le(feed))
+        cmds += format_message(Command.FeedPaper, uint16_le(feed))
         lines = lines - feed
-    return blank_commands
+    duration = SECS_PER_LINE_FEED * lines
+    return CommandBytes(bytes(cmds), duration)
 
 
-def cmd_print_and_feed(args: PrintAndFeedArgs) -> bytes:
+def cmd_print_and_feed(args: PrintAndFeedArgs) -> CommandBytes:
     """Build a command that prints an image, then feeds paper."""
     image = PIL.Image.open(args.filename)
-    return [
-        *cmd_print_image(
-            image,
-            args.drawing_mode,
-            args.energy_mode,
-            args.print_quality,
-        ),
-        *cmd_feed_paper(args.padding),
-    ]
+    cpr = cmd_print_image(
+        image,
+        args.drawing_mode,
+        args.energy_mode,
+        args.print_quality,
+    )
+    cf = cmd_feed_paper(args.padding)
+    return cpr + cf
