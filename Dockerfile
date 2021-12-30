@@ -20,4 +20,4 @@ COPY . .
 COPY --from=deps /app/.venv /app/.venv
 
 EXPOSE 8000
-CMD [".venv/bin/uvicorn", "bluecat.main:app"]
+CMD [".venv/bin/uvicorn", "bluecat.main:app", "--host", "0.0.0.0"]
