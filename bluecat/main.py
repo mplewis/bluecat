@@ -3,7 +3,6 @@ import os
 import tempfile
 from queue import Queue, Empty
 from time import time
-from typing import List
 
 from fastapi import FastAPI, File
 
