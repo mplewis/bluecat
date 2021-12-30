@@ -1,6 +1,7 @@
 import asyncio
 import os
 import tempfile
+import traceback
 from queue import Queue, Empty
 from time import time
 
@@ -54,8 +55,8 @@ async def worker():
             os.unlink(filename)
         except Empty:
             await asyncio.sleep(0.1)
-        except Exception as e:
-            print(e)
+        except Exception:
+            traceback.print_exc()
 
 
 @app.post("/print")
