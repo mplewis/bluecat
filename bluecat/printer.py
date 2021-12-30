@@ -1,5 +1,4 @@
 import asyncio
-import sys
 from contextlib import asynccontextmanager
 from time import time
 from typing import List, Optional
@@ -67,11 +66,6 @@ async def connected_client(names: List[str]) -> BleakClient:
         yield client
     finally:
         await client.disconnect()
-
-
-def ding():
-    sys.stdout.write("\a")
-    sys.stdout.flush()
 
 
 async def send_packets(client: BleakClient, cmds: bytes):

@@ -1,8 +1,12 @@
 import asyncio
+import os
+import tempfile
+from multiprocessing import Process
+from queue import Queue, Empty
 from time import time
 from typing import List
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File
 
 from bluecat.printer import connected_client, send_packets
 from bluecat.protocol import (
@@ -40,13 +44,45 @@ PRINTER_NAMES = [
     "GB03",
 ]
 
+print_args = PrintAndFeedArgs(
+    filename=None,  # replaced on print
+    padding=40,
+    energy_mode=EnergyMode.High,
+)
+
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 app = FastAPI()
+file_print_queue = Queue()
+
+
+async def worker():
+    while True:
+        try:
+            filename = file_print_queue.get(block=False)
+            print(f"Printing {filename}")
+            print_args.filename = filename
+            await print_image(print_args)
+            os.unlink(filename)
+        except Empty:
+            await asyncio.sleep(0.1)
+        except Exception as e:
+            print(e)
+
+
+asyncio.create_task(worker())
 
 
 @app.post("/print")
-async def print_ep(image: UploadFile = File(...)):
-    return {"filename": image.filename}
+def print_ep(image: bytes = File(...)):
+    target = tempfile.NamedTemporaryFile(delete=False)
+    with open(target.name, "wb") as f:
+        f.write(image)
+    file_print_queue.put(target.name)
+    print(target.name)
+    return "OK"
 
 
 async def print_image(args: PrintAndFeedArgs):
@@ -58,21 +94,4 @@ async def print_image(args: PrintAndFeedArgs):
         await asyncio.sleep(0.1)
 
 
-async def main():
-    filenames = [
-        "tmp/redrocks.pbm",
-        "tmp/daftpunk.jpg",
-        "tmp/redrocks.pbm",
-        "tmp/daftpunk.jpg",
-    ]
-    for fn in filenames:
-        args = PrintAndFeedArgs(
-            filename=fn,
-            padding=40,
-            energy_mode=EnergyMode.High,
-        )
-        await print_image(args)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.create_task(worker())
