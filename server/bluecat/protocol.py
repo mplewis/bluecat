@@ -125,6 +125,32 @@ def format_message(command: int, data: Union[int, Iterable[int]]) -> bytes:
     )
 
 
+def convert_image(img: PIL.Image) -> PIL.Image:
+    """Resize an image, convert it to dithered B&W, and rotate it for printing."""
+
+    if img.width > PRINTER_WIDTH:
+        scale = PRINTER_WIDTH / img.width
+        img = img.resize((PRINTER_WIDTH, int(img.height * scale)))
+
+    if img.width < (PRINTER_WIDTH // 2):
+        scale = PRINTER_WIDTH // img.width
+        img = img.resize(
+            (img.width * scale, img.height * scale), resample=PIL.Image.NEAREST
+        )
+
+    img = img.convert("RGB").convert("1")
+    if img.width < PRINTER_WIDTH:
+        pad_amount = (PRINTER_WIDTH - img.width) // 2
+        padded_image = PIL.Image.new("1", (PRINTER_WIDTH, img.height), 1)
+        padded_image.paste(img, box=(pad_amount, 0))
+        img = padded_image
+
+    # the printer prints "upside down," so rotate the image to fix this
+    img = img.rotate(180)
+
+    return img
+
+
 def cmd_print_image(
     img: PIL.Image,
     drawing_mode: int,
@@ -142,22 +168,7 @@ def cmd_print_image(
     cmds += format_message(Command.SetFeedRate, FeedRate.Print)
     cmds += format_message(Command.SetControlLattice, Lattice.Start)
 
-    if img.width > PRINTER_WIDTH:
-        # image is wider than printer resolution; scale it down proportionately
-        scale = PRINTER_WIDTH / img.width
-        img = img.resize((PRINTER_WIDTH, int(img.height * scale)))
-    if img.width < (PRINTER_WIDTH // 2):
-        # scale up to largest whole multiple
-        scale = PRINTER_WIDTH // img.width
-        img = img.resize(
-            (img.width * scale, img.height * scale), resample=PIL.Image.NEAREST
-        )
-    img = img.convert("RGB").convert("1")
-    if img.width < PRINTER_WIDTH:
-        pad_amount = (PRINTER_WIDTH - img.width) // 2
-        padded_image = PIL.Image.new("1", (PRINTER_WIDTH, img.height), 1)
-        padded_image.paste(img, box=(pad_amount, 0))
-        img = padded_image
+    img = convert_image(img)
 
     for y in range(0, img.height):
         bmp = []
