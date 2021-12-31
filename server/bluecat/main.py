@@ -38,8 +38,10 @@ async def print_image(args: PrintAndFeedArgs):
     """Print a single image."""
     c = cmd_print_and_feed(args)
     async with connected_client(PRINTER_NAMES) as client:
+        print("Connected")
         start = time()
         await send_packets(client, c.data)
+        print("Waiting for print to complete...")
     while time() - start < c.print_time:
         await asyncio.sleep(0.1)
 
@@ -53,6 +55,7 @@ async def worker():
             print_args.filename = filename
             await print_image(print_args)
             os.unlink(filename)
+            print(f"Printed {filename}")
         except Empty:
             await asyncio.sleep(0.1)
         except Exception:
@@ -66,7 +69,6 @@ def print_ep(image: bytes = File(...)):
     with open(target.name, "wb") as f:
         f.write(image)
     file_print_queue.put(target.name)
-    print(target.name)
     return "OK"
 
 
