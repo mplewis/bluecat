@@ -61,6 +61,8 @@ async def worker():
             await asyncio.sleep(0.1)
         except Exception:
             traceback.print_exc()
+            file_print_queue.put(filename)
+            await asyncio.sleep(5)
 
 
 @app.post("/print")
