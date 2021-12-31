@@ -14,20 +14,21 @@ from bluecat.protocol import (
     EnergyMode,
 )
 
+
+# Default arguments for a print job.
+print_args = PrintAndFeedArgs(
+    filename=None,  # replaced on print
+    padding=40,
+    energy_mode=EnergyMode.High,
+)
+
+# Advertised names for the cat printer.
 PRINTER_NAMES = [
     "GT01",
     "GB01",
     "GB02",
     "GB03",
 ]
-
-
-# Default arguments for a print job.
-print_args = PrintAndFeedArgs(
-    filename=None,  # replaced on print
-    padding=120,
-    energy_mode=EnergyMode.High,
-)
 
 
 app = FastAPI()
