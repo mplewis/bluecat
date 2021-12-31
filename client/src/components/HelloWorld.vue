@@ -37,9 +37,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import axios from 'axios'
 
 defineProps<{ msg: string }>()
+
+
+const captureQuality = 0.95
 
 const count = ref(0)
 
@@ -83,13 +87,25 @@ function capture() {
   canvas.height = height;
   context.drawImage(video, 0, 0, width, height);
 
-  var data = canvas.toDataURL('image/png');
-  console.log(data)
+  canvas.toBlob(function (blob) {
+    if (!blob) {
+      throw new Error("Canvas toBlob failed");
+    }
+    sendToPrinter(blob)
+  }, 'image/jpeg', captureQuality);
 }
 
-document.addEventListener("DOMContentLoaded", function () {
+async function sendToPrinter(blob: Blob) {
+  const form = new FormData()
+  form.append('image', blob)
+  const headers = { 'Content-Type': 'multipart/form-data' }
+  const response = await axios.post('/print', form, { headers })
+  console.log(response)
+}
+
+onMounted(() => {
   connectCamera()
-});
+})
 </script>
 
 <style lang="scss" scoped>
