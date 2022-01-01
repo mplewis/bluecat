@@ -1,30 +1,5 @@
 <template>
-  <h1>{{ msg }}</h1>
-
-  <p>
-    Recommended IDE setup:
-    <a href="https://code.visualstudio.com/" target="_blank">VSCode</a>
-    +
-    <a href="https://github.com/johnsoncodehk/volar" target="_blank">Volar</a>
-  </p>
-
-  <p>
-    See
-    <code>README.md</code> for more information.
-  </p>
-
-  <p>
-    <a href="https://vitejs.dev/guide/features.html" target="_blank">Vite Docs</a>
-    |
-    <a href="https://v3.vuejs.org/" target="_blank">Vue 3 Docs</a>
-  </p>
-
-  <button type="button" @click="count++">count is: {{ count }}</button>
-  <p>
-    Edit
-    <code>components/HelloWorld.vue</code> to test hot module replacement.
-  </p>
-
+  <h1>Photo Booth</h1>
   <div>
     <video autoplay="true" id="preview" @click="capture" />
   </div>
@@ -34,18 +9,16 @@
   <div>
     <button @click="capture">Take photo</button>
   </div>
+  <div>
+    <button @click="feed">Feed paper</button>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
 import axios from 'axios'
 
-defineProps<{ msg: string }>()
-
-
 const captureQuality = 0.95
-
-const count = ref(0)
 
 var dimensions: { width: number, height: number } | null = null
 
@@ -99,8 +72,13 @@ async function sendToPrinter(blob: Blob) {
   const form = new FormData()
   form.append('image', blob)
   const headers = { 'Content-Type': 'multipart/form-data' }
-  const response = await axios.post('/print', form, { headers })
-  console.log(response)
+  const resp = await axios.post('/print', form, { headers })
+  console.log(resp)
+}
+
+async function feed() {
+  const resp = await axios.post('/feed')
+  console.log(resp)
 }
 
 onMounted(() => {

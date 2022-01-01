@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/print": "http://localhost:8000",
+      "/feed": "http://localhost:8000",
     },
   },
 });

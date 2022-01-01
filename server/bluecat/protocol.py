@@ -192,7 +192,7 @@ def cmd_print_image(
     return CommandBytes(bytes(cmds), duration)
 
 
-def cmd_feed_paper(lines) -> CommandBytes:
+def cmd_feed_paper(lines: int) -> CommandBytes:
     """Build a command that feeds paper.
 
     Returns the command bytes and the approximate number of seconds this will take to print.
