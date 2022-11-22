@@ -11,7 +11,7 @@ python-multipart = "^0.0.5"
 uvicorn = "^0.16.0"
 bleak = "^0.13.0"
 crc8 = "^0.1.0"
-Pillow = "^8.4.0"
+Pillow = "^9.3.0"
 
 [tool.poetry.dev-dependencies]
 ipython = "^7.30.1"
